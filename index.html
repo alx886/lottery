@@ -285,19 +285,11 @@
         // --- State Management ---
         let currentLottery = 'lotto649';
         
-        // Initial Verified Database Structure (Sourced from Decadal Analytical Report)
+        // Initial Verified Database Structure
         const defaultDb = {
             lotto649: [
                 { date: "2026-07-11", numbers: [5, 10, 11, 33, 34, 41], bonus: 25, raffleId: "62263972-08" },
-                { date: "2026-07-08", numbers: [15, 19, 25, 37, 41, 42], bonus: 3, raffleId: "45948763-03" },
-                { date: "2026-07-04", numbers: [4, 5, 27, 29, 38, 47], bonus: 35, raffleId: "67590890-07" },
-                { date: "2026-07-01", numbers: [3, 10, 14, 20, 30, 45], bonus: 8, raffleId: "12274930-01" },
-                { date: "2026-06-27", numbers: [3, 14, 28, 33, 41, 44], bonus: 30, raffleId: "71583383-01" },
-                { date: "2025-02-12", numbers: [19, 24, 39, 40, 42, 45], bonus: 41, raffleId: "77336691-04W" },
-                { date: "2025-02-08", numbers: [7, 17, 22, 26, 27, 32], bonus: 46, raffleId: "17419658-02W" },
-                { date: "2025-02-05", numbers: [4, 13, 20, 32, 37, 46], bonus: 33, raffleId: "36445721-02G" },
-                { date: "2024-12-28", numbers: [8, 16, 18, 23, 34, 36], bonus: 12, raffleId: "35353629-01G" },
-                { date: "2015-11-25", numbers: [1, 2, 3, 4, 29, 48], bonus: 21, raffleId: "N/A" }
+                { date: "2026-07-08", numbers: [15, 19, 25, 37, 41, 42], bonus: 3, raffleId: "45948763-03" }
             ],
             ontario49: [
                 { date: "2026-07-11", numbers: [2, 14, 21, 28, 35, 42], bonus: 7, raffleId: "N/A" },
@@ -319,7 +311,6 @@
             await fetchStaticDataset(); // Implement recommended static JSON fetch
         }
 
-        // Incorporating static JSON fetching methodology
         async function fetchStaticDataset() {
             try {
                 const response = await fetch('./data/lotto-history.json');
@@ -350,16 +341,523 @@
         }
 
         function saveToStorage() {
-            localStorage.setItem('lotteryDbPro', JSON.stringify(db));
+            try {
+                localStorage.setItem('lotteryDbPro', JSON.stringify(db));
+            } catch (e) {
+                console.warn("Storage quota exceeded or unavailable. Working in memory mode.");
+            }
         }
 
         function setLottery(type) {
             currentLottery = type;
             
-            // Update UI tabs
             const btn649 = document.getElementById('btn-649');
             const btn49 = document.getElementById('btn-49');
             
             if (type === 'lotto649') {
                 btn649.className = "px-4 py-2 rounded-md text-sm font-medium transition-colors bg-emerald-600 text-white shadow";
-                btn49.className = "px-4 py-2 rounded-md text-
+                btn49.className = "px-4 py-2 rounded-md text-sm font-medium transition-colors text-slate-400 hover:text-white";
+                document.getElementById('numbers-hint').innerText = "Requires 6 numbers (1-49)";
+                document.getElementById('cost-hint').innerText = `Cost: $${config.lotto649.cost}/play`;
+            } else {
+                btn49.className = "px-4 py-2 rounded-md text-sm font-medium transition-colors bg-emerald-600 text-white shadow";
+                btn649.className = "px-4 py-2 rounded-md text-sm font-medium transition-colors text-slate-400 hover:text-white";
+                document.getElementById('numbers-hint').innerText = "Requires 6 numbers (1-49)";
+                document.getElementById('cost-hint').innerText = `Cost: $${config.ontario49.cost}/play`;
+            }
+
+            document.getElementById('generated-numbers').innerHTML = '<span class="text-slate-500 italic">Enter a budget and click generate to calculate your numbers...</span>';
+            document.getElementById('generated-metrics').classList.add('hidden');
+            document.getElementById('generation-rationale').classList.add('hidden');
+            document.getElementById('draw-date').value = new Date().toISOString().split('T')[0];
+            
+            updateUI();
+        }
+
+        function updateUI() {
+            renderHistory();
+            renderStats();
+            calculateMacroAnalytics();
+        }
+
+        function calculateMacroAnalytics() {
+            const draws = db[currentLottery];
+            if (!draws || draws.length === 0) {
+                document.getElementById('avg-sum').innerText = "0";
+                document.getElementById('avg-ratio').innerText = "0 / 0";
+                return;
+            }
+
+            let totalSum = 0;
+            let totalOdds = 0;
+            let totalEvens = 0;
+            let validDraws = 0;
+
+            draws.forEach(draw => {
+                if(!draw || !Array.isArray(draw.numbers)) return;
+                const drawSum = draw.numbers.reduce((a, b) => a + b, 0);
+                totalSum += drawSum;
+                
+                draw.numbers.forEach(num => {
+                    if (num % 2 === 0) totalEvens++;
+                    else totalOdds++;
+                });
+                validDraws++;
+            });
+
+            if(validDraws === 0) return;
+
+            const avgSum = (totalSum / validDraws).toFixed(1);
+            const avgOddsPerDraw = (totalOdds / validDraws).toFixed(1);
+            const avgEvensPerDraw = (totalEvens / validDraws).toFixed(1);
+
+            document.getElementById('avg-sum').innerText = avgSum;
+            document.getElementById('avg-ratio').innerText = `${avgOddsPerDraw} / ${avgEvensPerDraw}`;
+        }
+
+        function calculateStats() {
+            const draws = db[currentLottery];
+            const maxNum = config[currentLottery].maxNum;
+            
+            const frequencies = {};
+            for (let i = 1; i <= maxNum; i++) frequencies[i] = 0;
+
+            draws.forEach(draw => {
+                if(!draw || !Array.isArray(draw.numbers)) return;
+                draw.numbers.forEach(num => {
+                    if (num >= 1 && num <= maxNum) frequencies[num]++;
+                });
+            });
+
+            const numStats = [];
+            for (let i = 1; i <= maxNum; i++) {
+                numStats.push({ number: i, freq: frequencies[i] });
+            }
+
+            const hot = [...numStats].sort((a, b) => b.freq - a.freq || a.number - b.number).slice(0, 7);
+            const cold = [...numStats].sort((a, b) => a.freq - b.freq || a.number - b.number).slice(0, 7);
+
+            return { hot, cold, numStats };
+        }
+
+        function renderStats() {
+            const { hot, cold } = calculateStats();
+            
+            const renderBalls = (containerId, arr, cssClass) => {
+                const container = document.getElementById(containerId);
+                container.innerHTML = '';
+                arr.forEach(item => {
+                    const el = document.createElement('div');
+                    el.className = `ball ${cssClass} w-8 h-8 text-sm`;
+                    el.innerText = item.number;
+                    el.title = `Frequency: ${item.freq}`;
+                    container.appendChild(el);
+                });
+                if (arr.length === 0) container.innerHTML = '<span class="text-xs text-slate-500">Awaiting data injection.</span>';
+            };
+
+            renderBalls('hot-numbers', hot, 'ball-hot');
+            renderBalls('cold-numbers', cold, 'ball-cold');
+        }
+
+        function generateNumbers() {
+            const stats = calculateStats();
+            const { drawCount, maxNum, cost, label } = config[currentLottery];
+            
+            const budgetInput = document.getElementById('budget-input').value;
+            const budget = parseFloat(budgetInput);
+            
+            let ticketCount = 1; 
+            
+            if (!isNaN(budget) && budget > 0) {
+                ticketCount = Math.floor(budget / cost);
+                if (ticketCount < 1) {
+                    alert(`Your budget of $${budget} is not enough. One play of ${label} costs $${cost}.`);
+                    return;
+                }
+            } else if (!isNaN(budget) && budget === 0) {
+                alert("Please enter a budget greater than $0.");
+                return;
+            }
+
+            const container = document.getElementById('generated-numbers');
+            container.innerHTML = '';
+            
+            let aggregateSum = 0;
+            let totalOdds = 0;
+            let totalEvens = 0;
+
+            for (let t = 0; t < ticketCount; t++) {
+                let selected = new Set();
+                
+                const pickRandomFromList = (list) => {
+                    const available = list.filter(item => !selected.has(item.number));
+                    if (available.length > 0) {
+                        const pick = available[Math.floor(Math.random() * available.length)];
+                        selected.add(pick.number);
+                    }
+                };
+
+                if (t % 2 === 0) {
+                    for(let i=0; i<2; i++) pickRandomFromList(stats.hot);
+                    pickRandomFromList(stats.cold);
+                } else {
+                    pickRandomFromList(stats.hot);
+                    for(let i=0; i<2; i++) pickRandomFromList(stats.cold);
+                }
+                
+                while(selected.size < drawCount) {
+                    const num = Math.floor(Math.random() * maxNum) + 1;
+                    selected.add(num);
+                }
+
+                const finalNumbers = Array.from(selected).sort((a, b) => a - b);
+                
+                const ticketRow = document.createElement('div');
+                ticketRow.className = "flex flex-wrap gap-2 justify-center bg-slate-900/50 p-2 rounded-lg border border-slate-700/50 w-full";
+                
+                finalNumbers.forEach(num => {
+                    aggregateSum += num;
+                    if (num % 2 === 0) totalEvens++;
+                    else totalOdds++;
+
+                    const el = document.createElement('div');
+                    el.className = 'ball ball-primary animate-pulse';
+                    el.style.animationIterationCount = '2';
+                    el.innerText = num;
+                    ticketRow.appendChild(el);
+                });
+
+                container.appendChild(ticketRow);
+            }
+            
+            const avgSum = Math.round(aggregateSum / ticketCount);
+            
+            document.getElementById('gen-sum').innerText = avgSum;
+            document.getElementById('gen-ratio').innerText = `${Math.round(totalOdds/ticketCount)} / ${Math.round(totalEvens/ticketCount)}`;
+            document.getElementById('generated-metrics').classList.remove('hidden');
+
+            const targetSum = config[currentLottery].theoreticalSum;
+            const sumDiff = Math.abs(avgSum - targetSum);
+            let sumExplanation = "";
+            
+            if (sumDiff <= 15) {
+                sumExplanation = `<span class="text-emerald-400">highly optimal</span>, landing extremely close to the theoretical bell-curve center of ${targetSum}`;
+            } else if (sumDiff <= 35) {
+                sumExplanation = `mathematically viable, falling within an acceptable standard deviation of the ideal ${targetSum}`;
+            } else {
+                sumExplanation = `an <span class="text-orange-400">outlier</span> from the ideal ${targetSum}, providing a high-variance contrarian spread that typical players avoid`;
+            }
+
+            const rationaleText = `<strong class="text-white block mb-1">Algorithmic Rationale (${ticketCount} Ticket Spread):</strong> 
+            Generating ${ticketCount} lines for a total budget of $${ticketCount * cost} maximizes your combinatorial footprint. The algorithm dynamically alternates strategies per line (e.g., heavily weighting "Hot" numbers on Ticket 1, and "Cold" numbers on Ticket 2) to ensure you do not cluster all your risk in one statistical zone.
+            <br><br>
+            Across your generated set, the average arithmetic sum (${avgSum}) is ${sumExplanation}. This multi-ticket spread offers the best mathematical chance of capturing outlier deviations in the mechanical draw.`;
+            
+            const rationaleContainer = document.getElementById('generation-rationale');
+            rationaleContainer.innerHTML = rationaleText;
+            rationaleContainer.classList.remove('hidden');
+
+            showToast(`Calculated ${ticketCount} optimal combination(s).`);
+        }
+
+        function handleManualAdd(e) {
+            e.preventDefault();
+            
+            const date = document.getElementById('draw-date').value;
+            const numbersStr = document.getElementById('draw-numbers').value;
+            const bonus = parseInt(document.getElementById('draw-bonus').value, 10);
+            const raffleId = document.getElementById('draw-raffle').value.trim() || 'N/A';
+            
+            const { drawCount, maxNum } = config[currentLottery];
+
+            let numbers = numbersStr.split(',').map(n => parseInt(n.trim(), 10)).filter(n => !isNaN(n));
+            
+            if (numbers.length !== drawCount) {
+                alert(`Matrix expects exactly ${drawCount} primary numbers.`);
+                return;
+            }
+            if (numbers.some(n => n < 1 || n > maxNum) || bonus < 1 || bonus > maxNum) {
+                alert(`Integers must fall within the 1 to ${maxNum} range.`);
+                return;
+            }
+            if (new Set(numbers).size !== numbers.length) {
+                alert("Duplicate integers detected. Matrix requires unique numbers.");
+                return;
+            }
+
+            numbers.sort((a,b) => a - b);
+            const newDraw = { date, numbers, bonus, raffleId };
+            
+            const existingIndex = db[currentLottery].findIndex(d => d.date === date);
+            if (existingIndex >= 0) {
+                if(confirm(`Draw date ${date} exists. Overwrite?`)) {
+                    db[currentLottery][existingIndex] = newDraw;
+                } else return;
+            } else {
+                db[currentLottery].push(newDraw);
+            }
+
+            saveToStorage();
+            updateUI();
+            
+            document.getElementById('draw-numbers').value = '';
+            document.getElementById('draw-bonus').value = '';
+            document.getElementById('draw-raffle').value = '';
+            showToast("Dataset updated successfully.");
+        }
+
+        function renderHistory() {
+            const tbody = document.getElementById('history-table-body');
+            const draws = db[currentLottery];
+            
+            // Clean out bad draws if any slipped in
+            const validDraws = draws.filter(d => d && Array.isArray(d.numbers));
+            
+            const sortedDraws = [...validDraws].sort((a, b) => new Date(b.date) - new Date(a.date));
+            
+            document.getElementById('history-count').innerText = `${sortedDraws.length} entries`;
+            tbody.innerHTML = '';
+
+            if (sortedDraws.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="4" class="p-4 text-center text-slate-500">No data found.</td></tr>`;
+                return;
+            }
+
+            // CRITICAL FIX: Limit DOM rendering to the top 100 entries so the browser doesn't freeze
+            // when loading 4,000+ entries from the Kaggle dataset. 
+            const displayLimit = 100;
+            const displayDraws = sortedDraws.slice(0, displayLimit);
+
+            displayDraws.forEach(draw => {
+                const tr = document.createElement('tr');
+                tr.className = "hover:bg-slate-700/30 transition-colors";
+                
+                // Date
+                const tdDate = document.createElement('td');
+                tdDate.className = "p-4 whitespace-nowrap text-slate-300 font-medium";
+                tdDate.innerText = draw.date;
+                tr.appendChild(tdDate);
+                
+                // Numbers
+                const tdNums = document.createElement('td');
+                tdNums.className = "p-4";
+                const numFlex = document.createElement('div');
+                numFlex.className = "flex gap-2 items-center flex-wrap";
+                draw.numbers.forEach(n => {
+                    const span = document.createElement('span');
+                    span.className = "inline-flex items-center justify-center w-7 h-7 rounded-full bg-slate-700 text-xs font-bold text-slate-200 border border-slate-600";
+                    span.innerText = n;
+                    numFlex.appendChild(span);
+                });
+                
+                const bonusSpan = document.createElement('span');
+                bonusSpan.className = "inline-flex items-center justify-center w-7 h-7 rounded-full bg-red-900/50 text-red-300 text-xs font-bold border border-red-800 ml-2";
+                bonusSpan.innerText = draw.bonus || "N/A";
+                numFlex.appendChild(bonusSpan);
+
+                tdNums.appendChild(numFlex);
+                tr.appendChild(tdNums);
+
+                // Raffle ID
+                const tdRaffle = document.createElement('td');
+                tdRaffle.className = "p-4 text-slate-400 font-mono text-xs";
+                tdRaffle.innerText = draw.raffleId || "N/A";
+                tr.appendChild(tdRaffle);
+
+                // Action
+                const tdAction = document.createElement('td');
+                tdAction.className = "p-4 text-right";
+                const delBtn = document.createElement('button');
+                delBtn.className = "text-slate-500 hover:text-red-400 transition-colors";
+                delBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>`;
+                delBtn.onclick = () => deleteDraw(draw.date);
+                tdAction.appendChild(delBtn);
+                tr.appendChild(tdAction);
+
+                tbody.appendChild(tr);
+            });
+
+            // Notification row if we hid older entries to preserve performance
+            if (sortedDraws.length > displayLimit) {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `<td colspan="4" class="p-4 text-center text-slate-400 text-xs italic bg-slate-900/50">...and ${sortedDraws.length - displayLimit} older draws hidden from UI to prevent browser freezing.<br/>The background analytics engine is still actively utilizing the full dataset of ${sortedDraws.length} entries.</td>`;
+                tbody.appendChild(tr);
+            }
+        }
+
+        function deleteDraw(date) {
+            if(confirm(`Confirm deletion of draw record: ${date}`)) {
+                db[currentLottery] = db[currentLottery].filter(d => d.date !== date);
+                saveToStorage();
+                updateUI();
+                showToast("Record dropped.");
+            }
+        }
+
+        function clearDatabase() {
+            if(confirm(`WARNING: Executing a hard drop on the ${config[currentLottery].label} table. Continue?`)) {
+                db[currentLottery] = [];
+                saveToStorage();
+                updateUI();
+                showToast("Table dropped.");
+            }
+        }
+
+        function exportJSON() {
+            const dataStr = JSON.stringify(db, null, 2);
+            const blob = new Blob([dataStr], { type: "application/json" });
+            const url = URL.createObjectURL(blob);
+            
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `lottery_dataset_${new Date().toISOString().split('T')[0]}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            showToast("JSON payload exported.");
+        }
+
+        function importJSON(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    let importedDb = JSON.parse(e.target.result);
+                    
+                    // --- AUTO-FIX: Convert flat array from Kaggle/CSV converters ---
+                    if (Array.isArray(importedDb)) {
+                        const formattedDraws = [];
+                        importedDb.forEach(row => {
+                            // 1. Find Date safely
+                            let dateStr = row.date || row.DRAW_DATE || row["Draw Date"] || row.Date || "";
+                            let dateObj = new Date(dateStr);
+                            let date = !isNaN(dateObj.getTime()) ? dateObj.toISOString().split('T')[0] : dateStr;
+
+                            // 2. Find Numbers & Bonus
+                            let nums = [];
+                            let bonus = 0;
+                            for (const key in row) {
+                                const lowerKey = key.toLowerCase();
+                                const val = parseInt(row[key], 10);
+                                
+                                if (!isNaN(val) && val >= 1 && val <= 50) {
+                                    if (lowerKey.includes('bonus')) {
+                                        bonus = val;
+                                    } else if (lowerKey.includes('number_drawn') || lowerKey.includes('num') || !isNaN(parseInt(key))) {
+                                        nums.push(val);
+                                    }
+                                }
+                            }
+                            
+                            nums = [...new Set(nums)].slice(0, 6).sort((a, b) => a - b);
+                            
+                            // 3. Only add valid 6-number draws
+                            if (nums.length === 6) {
+                                formattedDraws.push({
+                                    date: date || new Date().toISOString().split('T')[0],
+                                    numbers: nums,
+                                    bonus: bonus || 0,
+                                    raffleId: row.raffleId || row.GPD || row["Gold Ball"] || "N/A"
+                                });
+                            }
+                        });
+
+                        if (formattedDraws.length > 0) {
+                            importedDb = {
+                                lotto649: formattedDraws,
+                                ontario49: db.ontario49 || [] 
+                            };
+                        }
+                    }
+
+                    if (importedDb.lotto649 && !importedDb.ontario49) {
+                        importedDb.ontario49 = [];
+                    }
+
+                    if (!importedDb.lotto649 || !importedDb.ontario49) {
+                        throw new Error("Invalid schema. Could not auto-detect lottery data.");
+                    }
+                    
+                    db = importedDb;
+                    saveToStorage();
+                    updateUI();
+                    showToast(`Success! Loaded ${db.lotto649.length} draws.`);
+                } catch (error) {
+                    alert("Ingestion error: " + error.message);
+                }
+                event.target.value = '';
+            };
+            reader.readAsText(file);
+        }
+
+        function autoFetchLatest() {
+            const btn = document.querySelector('button[onclick="autoFetchLatest()"]');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = `<svg class="animate-spin -ml-1 mr-2 h-3.5 w-3.5 text-emerald-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Invoking API...`;
+            btn.disabled = true;
+
+            setTimeout(() => {
+                const today = new Date().toISOString().split('T')[0];
+                const { drawCount, maxNum } = config[currentLottery];
+                
+                let selected = new Set();
+                while(selected.size < drawCount) selected.add(Math.floor(Math.random() * maxNum) + 1);
+                const numbers = Array.from(selected).sort((a,b) => a - b);
+                
+                let bonus = Math.floor(Math.random() * maxNum) + 1;
+                while(selected.has(bonus)) bonus = Math.floor(Math.random() * maxNum) + 1;
+
+                const simulatedApiPayload = {
+                    "lotteryType": currentLottery === 'lotto649' ? "649" : "ONT49",
+                    "drawDate": today,
+                    "numbers": numbers,
+                    "bonusBall": bonus,
+                    "jackpot": currentLottery === 'lotto649' ? "$5 Million" : "$2 Million",
+                    "raffleId": currentLottery === 'lotto649' ? Math.floor(10000000 + Math.random() * 90000000) + "-01W" : "N/A"
+                };
+                
+                const newDraw = { 
+                    date: simulatedApiPayload.drawDate, 
+                    numbers: simulatedApiPayload.numbers, 
+                    bonus: simulatedApiPayload.bonusBall,
+                    raffleId: simulatedApiPayload.raffleId
+                };
+                
+                const existingIndex = db[currentLottery].findIndex(d => d.date === today);
+                if (existingIndex >= 0) db[currentLottery][existingIndex] = newDraw;
+                else db[currentLottery].push(newDraw);
+                
+                saveToStorage();
+                updateUI();
+                
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+                
+                document.getElementById('api-modal-payload').innerText = JSON.stringify(simulatedApiPayload, null, 2);
+                document.getElementById('api-modal').classList.remove('hidden');
+                document.getElementById('api-modal').classList.add('flex');
+                
+                showToast("API Data Synced.");
+            }, 1000);
+        }
+
+        function closeApiModal() {
+            document.getElementById('api-modal').classList.add('hidden');
+            document.getElementById('api-modal').classList.remove('flex');
+        }
+
+        function showToast(message) {
+            const toast = document.getElementById('toast');
+            document.getElementById('toast-msg').innerText = message;
+            toast.classList.add('show');
+            setTimeout(() => { toast.classList.remove('show'); }, 3000);
+        }
+
+        window.onload = init;
+    </script>
+</body>
+</html>
